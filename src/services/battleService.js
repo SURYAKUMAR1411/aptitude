@@ -191,18 +191,28 @@ export async function nextQuestion(roomCode, currentIndex, totalQuestions) {
 
 // ===== LISTEN TO ROOM =====
 export function onRoomUpdate(roomCode, callback) {
-    let fbActive = false;
-    try {
-        const roomRef = ref(rtdb, `rooms/${roomCode}`);
-        onValue(roomRef, (snap) => { fbActive = true; callback(snap.val()); });
-    } catch { }
+    let fbUnsub = null;
 
+    // Only attach Firebase listener if RTDB is available
+    if (isFirebaseAvailable === true) {
+        try {
+            const roomRef = ref(rtdb, `rooms/${roomCode}`);
+            onValue(roomRef, (snap) => { callback(snap.val()); });
+            fbUnsub = () => { try { off(roomRef); } catch { } };
+        } catch { }
+    }
+
+    // Always register local listener as well
     if (!roomListeners[roomCode]) roomListeners[roomCode] = [];
     roomListeners[roomCode].push(callback);
-    if (localRooms[roomCode] && !fbActive) setTimeout(() => callback({ ...localRooms[roomCode] }), 50);
+
+    // If using local mode, emit the current local room data
+    if (!fbUnsub && localRooms[roomCode]) {
+        setTimeout(() => callback({ ...localRooms[roomCode] }), 50);
+    }
 
     return () => {
-        try { off(ref(rtdb, `rooms/${roomCode}`)); } catch { }
+        if (fbUnsub) fbUnsub();
         roomListeners[roomCode] = (roomListeners[roomCode] || []).filter(c => c !== callback);
     };
 }
